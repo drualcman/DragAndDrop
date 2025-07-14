@@ -131,41 +131,78 @@
         if(dropPosition == "Left" || dropPosition == "Right")
         {
             var parent = targetItem.Parent;
-            if(parent == null )
+            if(parent == null)
                 return; // Solo se puede insertar en una fila
 
             var index = parent.Items.IndexOf(targetItem);
             if(index == -1)
                 return;
 
+            // Asignar misma fila que el target
             itemToInsert.Position.RowNumber = targetItem.Position.RowNumber;
 
-            int rowNumber = targetItem.Position.ColumnNumber;
-            if(dropPosition == "Right")                      
+            // Determinar posición de columna
+            if(dropPosition == "Right")
             {
-                itemToInsert.Position.ColumnNumber = rowNumber + 1;
+                itemToInsert.Position.ColumnNumber = targetItem.Position.ColumnNumber + 1;
                 index++;
+
+                // Reorganizar columnas posteriores
+                foreach(var sibling in parent.Items.Skip(index))
+                {
+                    if(sibling.Position.RowNumber == targetItem.Position.RowNumber)
+                    {
+                        sibling.Position.ColumnNumber++;
+                    }
+                }
             }
-            else
-                itemToInsert.Position.ColumnNumber = rowNumber - 1;
+            else // "Left"
+            {
+                itemToInsert.Position.ColumnNumber = targetItem.Position.ColumnNumber;
+                // Reorganizar columnas (target y posteriores)
+                foreach(var sibling in parent.Items.Where(x =>
+                    x.Position.RowNumber == targetItem.Position.RowNumber &&
+                    x.Position.ColumnNumber >= targetItem.Position.ColumnNumber))
+                {
+                    sibling.Position.ColumnNumber++;
+                }
+            }
 
             parent.Items.Insert(index, itemToInsert);
         }
         // Acción Vertical: Insertar como una nueva fila
         else if(dropPosition == "Top" || dropPosition == "Bottom")
         {
-            // Encontrar el contenedor de la fila de destino (puede ser el canvas principal u otra columna)
+            // Encontrar el contenedor de la fila de destino
             var containerParent = targetItem.Parent;
             if(containerParent != null) // La fila está anidada dentro de una columna
             {
                 var index = containerParent.Items.IndexOf(targetItem);
                 if(index == -1)
                     return;
-                int rowNumber = containerParent.Items.Max(r => r.Position.RowNumber);
+
                 if(dropPosition == "Top")
-                    itemToInsert.Position.RowNumber = rowNumber - 1;
-                else
-                    itemToInsert.Position.RowNumber = rowNumber + 1;
+                {
+                    itemToInsert.Position.RowNumber = targetItem.Position.RowNumber;
+                    // Reorganizar filas posteriores
+                    foreach(var sibling in containerParent.Items.Where(x =>
+                        x.Position.RowNumber >= targetItem.Position.RowNumber))
+                    {
+                        sibling.Position.RowNumber++;
+                    }
+                }
+                else // "Bottom"
+                {
+                    itemToInsert.Position.RowNumber = targetItem.Position.RowNumber + 1;
+                    // Reorganizar filas posteriores (excepto la actual)
+                    foreach(var sibling in containerParent.Items.Where(x =>
+                        x.Position.RowNumber > targetItem.Position.RowNumber))
+                    {
+                        sibling.Position.RowNumber++;
+                    }
+                    index++;
+                }
+
                 containerParent.Items.Insert(index, itemToInsert);
             }
             else // La fila es una fila raíz en el canvas principal
@@ -174,25 +211,43 @@
                 if(index == -1)
                     return;
 
-                int rowNumber = reportRows.Max(r => r.Position.RowNumber);
                 if(dropPosition == "Top")
-                    itemToInsert.Position.RowNumber = rowNumber - 1;
-                else
-                    itemToInsert.Position.RowNumber = rowNumber + 1;
-                if(dropPosition == "Bottom")
                 {
+                    itemToInsert.Position.RowNumber = targetItem.Position.RowNumber;
+                    // Reorganizar todas las filas desde la posición actual
+                    foreach(var row in reportRows.Where(r =>
+                        r.Position.RowNumber >= targetItem.Position.RowNumber))
+                    {
+                        row.Position.RowNumber++;
+                    }
+                }
+                else // "Bottom"
+                {
+                    itemToInsert.Position.RowNumber = targetItem.Position.RowNumber + 1;
+                    // Reorganizar filas posteriores
+                    foreach(var row in reportRows.Where(r =>
+                        r.Position.RowNumber > targetItem.Position.RowNumber))
+                    {
+                        row.Position.RowNumber++;
+                    }
                     index++;
                 }
+
                 reportRows.Insert(index, itemToInsert);
             }
         }
         // Acción Central: Anidar o reestructurar
         else if(dropPosition == "Center")
         {
+            // Si el target es una fila vacía, mantener su posición
+            if(targetItem.Visualization == VisualizationType.Empty)
+            {
+                itemToInsert.Position.RowNumber = targetItem.Position.RowNumber;
+                itemToInsert.Position.ColumnNumber = targetItem.Items.Count + 1;
+            }
             targetItem.Items.Add(itemToInsert);
         }
     }
-
     private void HandleDeleteItem(TemplateExecutionModel item)
     {
         var itemToDelete = FindItemById(item.UniqueId);
