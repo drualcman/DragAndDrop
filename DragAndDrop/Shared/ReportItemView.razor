@@ -14,7 +14,8 @@
 
             @foreach(var rowGroup in groupedByRow)
             {
-                <div class="row-content">
+                <div class="row-content" data-type="@Item.Visualization">
+                    <button class="delete-btn" title="Eliminar este elemento" @onclick="() => OnDeleteItemRequest.InvokeAsync(Item)">×</button>
                     @foreach(var child in rowGroup)
                     {
                         <ReportItemView Item="child" OnDeleteItemRequest="OnDeleteItemRequest" />

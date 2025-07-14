@@ -159,6 +159,7 @@ html, body {
     display: flex;
     flex-direction: column;
     min-height: 80px;
+    flex-grow: 1;
 }
 
 .report-row {
@@ -170,11 +171,6 @@ html, body {
     flex-direction: row;
     gap: 10px;
     flex-grow: 1;
-}
-
-.report-col {
-    flex-grow: 1;
-    flex-basis: 0;
 }
 
 .col-content {
@@ -194,6 +190,8 @@ html, body {
     border-bottom: 1px solid #eee;
     padding-bottom: 3px;
     cursor: grab; /* La cabecera es el punto de agarre */
+    position: absolute;
+    width: 100%;
 }
 
 .delete-btn {
@@ -210,6 +208,9 @@ html, body {
     padding: 0;
     transition: background-color 0.2s;
     flex-shrink: 0;
+    position: absolute;
+    top: 0;
+    right: 5px;
 }
 
     .delete-btn:hover {

@@ -58,7 +58,6 @@
 
             foreach(var (vizType, element) in toolElements)
             {
-                // El dato que se arrastra es de tipo 'Tool'
                 var dragData = new { DragType = "Tool", Type = vizType.ToString() };
                 await JSRuntime.InvokeVoidAsync("makeDraggable", element, dragData);
             }
@@ -76,12 +75,10 @@
 
         if(dragType == "Tool")
         {
-            // Lógica para añadir una nueva herramienta
             HandleNewToolDrop(droppedData.GetProperty("type").GetString() ?? "", targetId, dropPosition);
         }
         else if(dragType == "Item")
         {
-            // Lógica para mover un item existente
             HandleMoveItemDrop(Guid.Parse(droppedData.GetProperty("itemId").GetString() ?? ""), Guid.Parse(targetId), dropPosition);
         }
         StateHasChanged();
@@ -102,7 +99,10 @@
 
         var targetItem = FindItemById(Guid.Parse(targetId));
         if(targetItem == null)
+        {
+            Console.WriteLine($"No se encontró el elemento objetivo con ID {targetId}");
             return;
+        }
 
         InsertItem(newItem, targetItem, dropPosition);
     }
@@ -113,41 +113,51 @@
         var targetItem = FindItemById(targetId);
 
         if(sourceItem == null || targetItem == null || sourceId == targetId || IsDescendant(sourceItem, targetId))
+        {
+            Console.WriteLine($"No se puede mover el item. Source: {sourceId}, Target: {targetId}");
             return;
+        }
 
-        // 1. Eliminar el item de su posición original
         var parent = sourceItem.Parent;
-        parent?.Items.Remove(sourceItem);
-        CleanupEmptyParent(parent);
+        if(parent != null)
+        {
+            parent.Items.Remove(sourceItem);
+            Console.WriteLine($"Eliminado item {sourceItem.Name} (ID: {sourceItem.UniqueId}) del padre {parent.Name} (ID: {parent.UniqueId})");
+            CleanupEmptyParent(parent);
+        }
+        else
+        {
+            reportRows.Remove(sourceItem);
+            Console.WriteLine($"Eliminado item raíz {sourceItem.Name} (ID: {sourceItem.UniqueId}) de reportRows");
+        }
 
-        // 2. Insertar el item en la nueva posición
         InsertItem(sourceItem, targetItem, dropPosition);
     }
 
-    // --- MÉTODO CORREGIDO ---
     private void InsertItem(TemplateExecutionModel itemToInsert, TemplateExecutionModel targetItem, string dropPosition)
     {
-        // Acción Horizontal: Insertar como columna hermana
         if(dropPosition == "Left" || dropPosition == "Right")
         {
             var parent = targetItem.Parent;
             if(parent == null)
-                return; // Solo se puede insertar en una fila
+            {
+                Console.WriteLine($"No se puede insertar en {dropPosition}: el objetivo no tiene padre");
+                return;
+            }
 
             var index = parent.Items.IndexOf(targetItem);
             if(index == -1)
+            {
+                Console.WriteLine($"No se encontró el objetivo en la colección del padre");
                 return;
+            }
 
-            // Asignar misma fila que el target
             itemToInsert.Position.RowNumber = targetItem.Position.RowNumber;
 
-            // Determinar posición de columna
             if(dropPosition == "Right")
             {
                 itemToInsert.Position.ColumnNumber = targetItem.Position.ColumnNumber + 1;
                 index++;
-
-                // Reorganizar columnas posteriores
                 foreach(var sibling in parent.Items.Skip(index))
                 {
                     if(sibling.Position.RowNumber == targetItem.Position.RowNumber)
@@ -156,10 +166,9 @@
                     }
                 }
             }
-            else // "Left"
+            else
             {
                 itemToInsert.Position.ColumnNumber = targetItem.Position.ColumnNumber;
-                // Reorganizar columnas (target y posteriores)
                 foreach(var sibling in parent.Items.Where(x =>
                     x.Position.RowNumber == targetItem.Position.RowNumber &&
                     x.Position.ColumnNumber >= targetItem.Position.ColumnNumber))
@@ -169,32 +178,32 @@
             }
 
             parent.Items.Insert(index, itemToInsert);
+            Console.WriteLine($"Insertado item {itemToInsert.Name} (ID: {itemToInsert.UniqueId}) en {dropPosition} del objetivo {targetItem.Name} (ID: {targetItem.UniqueId})");
         }
-        // Acción Vertical: Insertar como una nueva fila
         else if(dropPosition == "Top" || dropPosition == "Bottom")
         {
-            // Encontrar el contenedor de la fila de destino
             var containerParent = targetItem.Parent;
-            if(containerParent != null) // La fila está anidada dentro de una columna
+            if(containerParent != null)
             {
                 var index = containerParent.Items.IndexOf(targetItem);
                 if(index == -1)
+                {
+                    Console.WriteLine($"No se encontró el objetivo en la colección del padre");
                     return;
+                }
 
                 if(dropPosition == "Top")
                 {
                     itemToInsert.Position.RowNumber = targetItem.Position.RowNumber;
-                    // Reorganizar filas posteriores
                     foreach(var sibling in containerParent.Items.Where(x =>
                         x.Position.RowNumber >= targetItem.Position.RowNumber))
                     {
                         sibling.Position.RowNumber++;
                     }
                 }
-                else // "Bottom"
+                else
                 {
                     itemToInsert.Position.RowNumber = targetItem.Position.RowNumber + 1;
-                    // Reorganizar filas posteriores (excepto la actual)
                     foreach(var sibling in containerParent.Items.Where(x =>
                         x.Position.RowNumber > targetItem.Position.RowNumber))
                     {
@@ -204,27 +213,29 @@
                 }
 
                 containerParent.Items.Insert(index, itemToInsert);
+                Console.WriteLine($"Insertado item {itemToInsert.Name} (ID: {itemToInsert.UniqueId}) en {dropPosition} del objetivo {targetItem.Name} (ID: {targetItem.UniqueId})");
             }
-            else // La fila es una fila raíz en el canvas principal
+            else
             {
                 var index = reportRows.IndexOf(targetItem);
                 if(index == -1)
+                {
+                    Console.WriteLine($"No se encontró el objetivo en reportRows");
                     return;
+                }
 
                 if(dropPosition == "Top")
                 {
                     itemToInsert.Position.RowNumber = targetItem.Position.RowNumber;
-                    // Reorganizar todas las filas desde la posición actual
                     foreach(var row in reportRows.Where(r =>
                         r.Position.RowNumber >= targetItem.Position.RowNumber))
                     {
                         row.Position.RowNumber++;
                     }
                 }
-                else // "Bottom"
+                else
                 {
                     itemToInsert.Position.RowNumber = targetItem.Position.RowNumber + 1;
-                    // Reorganizar filas posteriores
                     foreach(var row in reportRows.Where(r =>
                         r.Position.RowNumber > targetItem.Position.RowNumber))
                     {
@@ -234,37 +245,68 @@
                 }
 
                 reportRows.Insert(index, itemToInsert);
+                Console.WriteLine($"Insertado item raíz {itemToInsert.Name} (ID: {itemToInsert.UniqueId}) en {dropPosition} del objetivo {targetItem.Name} (ID: {targetItem.UniqueId})");
             }
         }
-        // Acción Central: Anidar o reestructurar
         else if(dropPosition == "Center")
         {
-            // Si el target es una fila vacía, mantener su posición
             if(targetItem.Visualization == VisualizationType.Empty)
             {
                 itemToInsert.Position.RowNumber = targetItem.Position.RowNumber;
                 itemToInsert.Position.ColumnNumber = targetItem.Items.Count + 1;
             }
             targetItem.Items.Add(itemToInsert);
+            Console.WriteLine($"Insertado item {itemToInsert.Name} (ID: {itemToInsert.UniqueId}) como hijo de {targetItem.Name} (ID: {targetItem.UniqueId})");
         }
     }
+
+    private HashSet<Guid> processedIds = new();
+
     private void HandleDeleteItem(TemplateExecutionModel item)
     {
+        if(processedIds.Contains(item.UniqueId))
+        {
+            Console.WriteLine($"El item {item.Name} (ID: {item.UniqueId}) ya está siendo procesado, evitando recursión");
+            return;
+        }
+
+        processedIds.Add(item.UniqueId);
         var itemToDelete = FindItemById(item.UniqueId);
-        if(itemToDelete?.Parent != null)
+        if(itemToDelete == null)
+        {
+            Console.WriteLine($"No se encontró el elemento con ID {item.UniqueId}");
+            processedIds.Remove(item.UniqueId);
+            return;
+        }
+
+        if(itemToDelete.Parent != null)
         {
             var parent = itemToDelete.Parent;
+            Console.WriteLine($"Eliminando item {itemToDelete.Name} (ID: {itemToDelete.UniqueId}) del padre {parent.Name} (ID: {parent.UniqueId}, Hijos antes: {parent.Items.Count})");
             parent.Items.Remove(itemToDelete);
+            Console.WriteLine($"Padre {parent.Name} (ID: {parent.UniqueId}) ahora tiene {parent.Items.Count} hijos");
             CleanupEmptyParent(parent);
         }
+        else if(!itemToDelete.HasChilds)
+        {
+            Console.WriteLine($"Eliminando fila raíz {itemToDelete.Name} (ID: {itemToDelete.UniqueId}) de reportRows");
+            reportRows.Remove(itemToDelete);
+        }
+        else
+        {
+            Console.WriteLine($"No se elimina la fila raíz {itemToDelete.Name} (ID: {itemToDelete.UniqueId}) porque tiene hijos ({itemToDelete.Items.Count})");
+            reportRows.Remove(item);
+        }
+        processedIds.Remove(item.UniqueId);
         StateHasChanged();
     }
 
     private void CleanupEmptyParent(TemplateExecutionModel? parent)
     {
-        if(parent != null && parent.Visualization == VisualizationType.Empty && !parent.HasChilds)
+        if(parent != null)
         {
-            HandleDeleteItem(parent);
+            Console.WriteLine($"Verificando padre {parent.Name} (ID: {parent.UniqueId}, Hijos: {parent.Items.Count}, Tipo: {parent.Visualization})");
+            // No eliminamos el padre, incluso si no tiene hijos, para permitir añadir nuevos hijos más tarde
         }
     }
 
@@ -276,6 +318,7 @@
             if(found != null)
                 return found;
         }
+        Console.WriteLine($"No se encontró el elemento con ID {id} en la estructura");
         return null;
     }
 
