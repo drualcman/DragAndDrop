@@ -1,31 +1,39 @@
 ﻿@page "/"
 @using DragAndDrop.Models
 @using DragAndDrop.Shared
+@using DragAndDrop.Utils
 @inject IJSRuntime JSRuntime
 @implements IAsyncDisposable
 
 <PageTitle>Blazor Drag & Drop Report Builder</PageTitle>
 
 <div class="report-builder-container">
-    <!-- Paleta de Herramientas -->
+    <!-- Paleta de Herramientas (Ahora dinámica) -->
     <div class="toolbox">
         <h4>Herramientas</h4>
-        <div id="tool-table" class="tool-item" @ref="draggableToolElement">
-            <span class="oi oi-grid-three-up" aria-hidden="true"></span> Tabla
-        </div>
-        <button class="btn btn-danger mt-3" @onclick="ClearReport">Limpiar Reporte</button>
+        @foreach(var vizType in Enum.GetValues<VisualizationType>())
+        {
+            <div id="tool-@vizType"
+                 class="tool-item"
+                 @ref="toolElements[vizType]"
+                 style="background-color: @ColorHelper.GetColorForVisualization(vizType, 0.1); border: 1px solid @ColorHelper.GetColorForVisualization(vizType);">
+                @vizType.ToString()
+            </div>
+        }
+        <hr />
+        <button class="btn btn-danger mt-3 w-100" @onclick="ClearReport">Limpiar Reporte</button>
     </div>
 
     <!-- Lienzo del Reporte -->
     <div class="report-canvas-wrapper">
         <div id="main-canvas" class="report-canvas drop-zone" @ref="dropZoneElement">
-            @if (!reportRows.Any())
+            @if(!reportRows.Any())
             {
                 <div class="empty-canvas-message">Arrastra una herramienta aquí para comenzar</div>
             }
-            @foreach (var row in reportRows)
+            @foreach(var row in reportRows)
             {
-                <ReportItemView Item="row" />
+                <ReportItemView Item="row" OnDeleteItemRequest="HandleDeleteItem" />
             }
         </div>
     </div>
@@ -35,24 +43,34 @@
     private List<TemplateExecutionModel> reportRows = new();
     private DotNetObjectReference<Home>? dotNetRef;
 
-    // Referencias a los elementos del DOM
-    private ElementReference draggableToolElement;
+    // Diccionario para mantener las referencias a los elementos de la paleta
+    private Dictionary<VisualizationType, ElementReference> toolElements = new();
     private ElementReference dropZoneElement;
+
+    protected override void OnInitialized()
+    {
+        // Inicializar el diccionario para que @ref funcione en el bucle
+        foreach(var vizType in Enum.GetValues<VisualizationType>().Where(v => v != VisualizationType.Empty))
+        {
+            toolElements[vizType] = new ElementReference();
+        }
+    }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (firstRender)
+        if(firstRender)
         {
-            // Creamos una referencia a esta instancia de la clase para que JS pueda llamarla
             dotNetRef = DotNetObjectReference.Create(this);
             await JSRuntime.InvokeVoidAsync("blazorDragDrop.setDotNetHelper", dotNetRef);
 
-            // Inicializamos los elementos de drag and drop
-            var dragData = new { Type = VisualizationType.Table.ToString() };
-            await JSRuntime.InvokeVoidAsync("makeDraggable", draggableToolElement, dragData);
+            // Hacer que cada herramienta sea arrastrable
+            foreach(var (vizType, element) in toolElements)
+            {
+                var dragData = new { Type = vizType.ToString() };
+                await JSRuntime.InvokeVoidAsync("makeDraggable", element, dragData);
+            }
+
             await JSRuntime.InvokeVoidAsync("makeDropZone", dropZoneElement);
-            
-            // Es necesario para que los nuevos elementos se vuelvan dropzones
             StateHasChanged();
         }
     }
@@ -64,10 +82,8 @@
         var vizTypeString = data["type"];
         Enum.TryParse(vizTypeString, out VisualizationType vizType);
 
-        // Lógica principal para manejar el drop
-        if (targetId == "main-canvas")
+        if(targetId == "main-canvas")
         {
-            // Regla 1: Si se suelta en el lienzo vacío, crear una nueva fila
             var newRow = new TemplateExecutionModel { Visualization = VisualizationType.Empty, Name = "Nueva Fila" };
             var newCol = new TemplateExecutionModel { Visualization = vizType, Name = vizType.ToString() };
             newRow.Items.Add(newCol);
@@ -75,41 +91,33 @@
         }
         else
         {
-            // Buscar el elemento de destino en nuestro árbol de datos
             var targetItem = FindItemById(Guid.Parse(targetId));
-            if (targetItem != null)
+            if(targetItem != null)
             {
-                if (targetItem.Visualization == VisualizationType.Empty)
+                if(targetItem.Visualization == VisualizationType.Empty)
                 {
-                    // Regla 2 y 3: Si se suelta en una fila (que es 'Empty'), añadir una nueva columna
                     var newCol = new TemplateExecutionModel { Visualization = vizType, Name = vizType.ToString() };
                     targetItem.Items.Add(newCol);
                 }
                 else
                 {
-                    // Regla 4: Si se suelta en una columna con contenido, la reestructura
                     var parent = targetItem.Parent;
-                    if (parent != null)
+                    if(parent != null)
                     {
-                        // 1. Crear una nueva fila que contendrá los elementos
                         var newSubRow = new TemplateExecutionModel { Visualization = VisualizationType.Empty, Name = "Fila anidada" };
-
-                        // 2. Mover el item existente a una nueva columna dentro de la sub-fila
                         var oldItemAsNewColumn = new TemplateExecutionModel
                         {
                             Visualization = targetItem.Visualization,
                             Name = targetItem.Name,
-                            // Copiar otras propiedades si es necesario
+                            Items = targetItem.Items
                         };
                         newSubRow.Items.Add(oldItemAsNewColumn);
 
-                        // 3. Añadir el nuevo item arrastrado como otra columna en la sub-fila
                         var newItemAsNewColumn = new TemplateExecutionModel { Visualization = vizType, Name = vizType.ToString() };
                         newSubRow.Items.Add(newItemAsNewColumn);
 
-                        // 4. Reemplazar el item original con la nueva sub-fila
                         var index = parent.Items.IndexOf(targetItem);
-                        if (index != -1)
+                        if(index != -1)
                         {
                             parent.Items[index] = newSubRow;
                         }
@@ -117,44 +125,69 @@
                 }
             }
         }
-        
-        // Notificar a Blazor que el estado ha cambiado para que re-renderice la UI
+        StateHasChanged();
+    }
+
+    // Método para manejar la solicitud de eliminación
+    private void HandleDeleteItem(Guid itemId)
+    {
+        var rowToRemove = reportRows.FirstOrDefault(r => r.UniqueId == itemId);
+        if(rowToRemove != null)
+        {
+            reportRows.Remove(rowToRemove);
+        }
+        else
+        {
+            var itemToDelete = FindItemById(itemId);
+            if(itemToDelete?.Parent != null)
+            {
+                itemToDelete.Parent.Items.Remove(itemToDelete);
+                // Si el padre es una fila y se queda sin hijos, lo eliminamos también.
+                if(itemToDelete.Parent.Visualization == VisualizationType.Empty && !itemToDelete.Parent.HasChilds)
+                {
+                    HandleDeleteItem(itemToDelete.Parent.UniqueId);
+                }
+            }
+        }
         StateHasChanged();
     }
 
     private TemplateExecutionModel? FindItemById(Guid id)
     {
-        foreach (var row in reportRows)
+        foreach(var row in reportRows)
         {
             var found = FindInNode(row, id);
-            if (found != null) return found;
+            if(found != null)
+                return found;
         }
         return null;
     }
 
     private TemplateExecutionModel? FindInNode(TemplateExecutionModel node, Guid id)
     {
-        if (node.UniqueId == id) return node;
-        foreach (var child in node.Items)
+        if(node.UniqueId == id)
+            return node;
+        foreach(var child in node.Items)
         {
             var found = FindInNode(child, id);
-            if (found != null) return found;
+            if(found != null)
+                return found;
         }
         return null;
     }
-    
+
     private void ClearReport()
     {
         reportRows.Clear();
         StateHasChanged();
     }
 
-    // Limpiar la referencia al objeto .NET para evitar memory leaks
-    public async ValueTask DisposeAsync()
+    public ValueTask DisposeAsync()
     {
-        if (dotNetRef != null)
+        if(dotNetRef != null)
         {
             dotNetRef.Dispose();
         }
+        return ValueTask.CompletedTask;
     }
 }
