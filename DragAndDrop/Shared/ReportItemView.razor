@@ -1,0 +1,56 @@
+﻿@using DragAndDrop.Models
+@inject IJSRuntime JSRuntime
+
+<div id="@Item.UniqueId" @ref="elementRef" class="@GetContainerClass(Item) drop-zone">
+    <div class="item-header">
+        <small>@Item.Name (@Item.Visualization)</small>
+    </div>
+    <div class="@GetContentClass(Item)">
+        @if(Item.HasChilds)
+        {
+            @foreach(var child in Item.Items)
+            {
+                // La magia de la recursividad!
+                <ReportItemView Item="child" />
+            }
+        }
+        else
+        {
+            <div class="item-content-placeholder">
+                @if(Item.Visualization != VisualizationType.Empty)
+                {
+                    <span>@Item.Visualization</span>
+                }
+                else
+                {
+                    <span>Arrastra aquí para añadir una columna</span>
+                }
+            </div>
+        }
+    </div>
+</div>
+
+@code {
+    [Parameter] public TemplateExecutionModel Item { get; set; } = null!;
+    private ElementReference elementRef;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if(firstRender)
+        {
+            // Cada item se convierte en una zona para soltar
+            await JSRuntime.InvokeVoidAsync("makeDropZone", elementRef);
+        }
+    }
+
+    private string GetContainerClass(TemplateExecutionModel item)
+    {
+        // Si un item es 'Empty', lo tratamos como una fila. Si no, como una columna.
+        return item.Visualization == VisualizationType.Empty ? "report-row" : "report-col";
+    }
+
+    private string GetContentClass(TemplateExecutionModel item)
+    {
+        return item.Visualization == VisualizationType.Empty ? "row-content" : "col-content";
+    }
+}
