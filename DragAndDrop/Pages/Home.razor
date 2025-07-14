@@ -131,7 +131,7 @@
         if(dropPosition == "Left" || dropPosition == "Right")
         {
             var parent = targetItem.Parent;
-            if(parent == null || parent.Visualization != VisualizationType.Empty)
+            if(parent == null )
                 return; // Solo se puede insertar en una fila
 
             var index = parent.Items.IndexOf(targetItem);

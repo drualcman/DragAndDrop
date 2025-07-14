@@ -3,22 +3,35 @@
 @inject IJSRuntime JSRuntime
 
 <div id="@Item.UniqueId" @ref="elementRef" class="@GetContainerClass(Item) drop-zone" style="@GetItemStyle()">
-    <div class="item-header">
-        <small>@Item.Name (@Item.Visualization, Fila: @Item.Position.RowNumber, Columna: @Item.Position.ColumnNumber)</small>
-        <button class="delete-btn" title="Eliminar este elemento" @onclick="() => OnDeleteItemRequest.InvokeAsync(Item)">×</button>
-    </div>
     <div class="@GetContentClass(Item)">
         @if(Item.HasChilds)
         {
-            @foreach(var child in Item.Items.OrderBy(r => r.Position.RowNumber).ThenBy(c => c.Position.ColumnNumber))
+            // Agrupar los elementos hijos por RowNumber
+            var groupedByRow = Item.Items
+            .OrderBy(r => r.Position.RowNumber)
+            .ThenBy(c => c.Position.ColumnNumber)
+            .GroupBy(r => r.Position.RowNumber);
+
+            @foreach(var rowGroup in groupedByRow)
             {
-                <ReportItemView Item="child" OnDeleteItemRequest="OnDeleteItemRequest" />
+                <div class="row-content">
+                    @foreach(var child in rowGroup)
+                    {
+                        <ReportItemView Item="child" OnDeleteItemRequest="OnDeleteItemRequest" />
+                    }
+                </div>
             }
         }
         else
         {
-            <div class="item-content-placeholder">
-                <span>Arrastra aquí para añadir una columna</span>
+            <div class="col-content">
+                <div class="item-header">
+                    <small>@Item.Name (@Item.Visualization, Fila: @Item.Position.RowNumber, Columna: @Item.Position.ColumnNumber)</small>
+                    <button class="delete-btn" title="Eliminar este elemento" @onclick="() => OnDeleteItemRequest.InvokeAsync(Item)">×</button>
+                </div>
+                <div class="item-content-placeholder">
+                    <span>Arrastra aquí para añadir una columna</span>
+                </div>
             </div>
         }
     </div>
@@ -42,8 +55,8 @@
         }
     }
 
-    private string GetContainerClass(TemplateExecutionModel item) => item.Visualization == VisualizationType.Empty ? "report-row" : "report-col";
-    private string GetContentClass(TemplateExecutionModel item) => item.Visualization == VisualizationType.Empty ? "row-content" : "col-content";
+    private string GetContainerClass(TemplateExecutionModel item) => (item.Items?.Any() ?? false) ? "report-row" : "report-col";
+    private string GetContentClass(TemplateExecutionModel item) => (item.Items?.Any() ?? false) ? "col-content" : "row-content";
     private string GetItemStyle()
     {
         var color = ColorHelper.GetColorForVisualization(Item.Visualization);
