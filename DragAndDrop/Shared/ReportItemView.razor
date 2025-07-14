@@ -4,13 +4,13 @@
 
 <div id="@Item.UniqueId" @ref="elementRef" class="@GetContainerClass(Item) drop-zone" style="@GetItemStyle()">
     <div class="item-header">
-        <small>@Item.Name (@Item.Visualization)</small>
-        <button class="delete-btn" title="Eliminar este elemento" @onclick="() => OnDeleteItemRequest.InvokeAsync(Item.UniqueId)">×</button>
+        <small>@Item.Name (@Item.Visualization, Fila: @Item.Position.RowNumber, Columna: @Item.Position.ColumnNumber)</small>
+        <button class="delete-btn" title="Eliminar este elemento" @onclick="() => OnDeleteItemRequest.InvokeAsync(Item)">×</button>
     </div>
     <div class="@GetContentClass(Item)">
         @if(Item.HasChilds)
         {
-            @foreach(var child in Item.Items)
+            @foreach(var child in Item.Items.OrderBy(r => r.Position.RowNumber).ThenBy(c => c.Position.ColumnNumber))
             {
                 <ReportItemView Item="child" OnDeleteItemRequest="OnDeleteItemRequest" />
             }
@@ -18,14 +18,7 @@
         else
         {
             <div class="item-content-placeholder">
-                @if(Item.Visualization != VisualizationType.Empty)
-                {
-                    <span>@Item.Visualization</span>
-                }
-                else
-                {
-                    <span>Arrastra aquí para añadir una columna</span>
-                }
+                <span>Arrastra aquí para añadir una columna</span>
             </div>
         }
     </div>
@@ -33,7 +26,7 @@
 
 @code {
     [Parameter] public TemplateExecutionModel Item { get; set; } = null!;
-    [Parameter] public EventCallback<Guid> OnDeleteItemRequest { get; set; }
+    [Parameter] public EventCallback<TemplateExecutionModel> OnDeleteItemRequest { get; set; }
     private ElementReference elementRef;
 
     protected override async Task OnAfterRenderAsync(bool firstRender)

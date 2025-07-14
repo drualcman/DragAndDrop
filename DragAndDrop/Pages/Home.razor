@@ -5,8 +5,6 @@
 @inject IJSRuntime JSRuntime
 @implements IAsyncDisposable
 
-<PageTitle>Blazor Drag & Drop Report Builder</PageTitle>
-
 <div class="report-builder-container">
     <!-- Paleta de Herramientas -->
     <div class="toolbox">
@@ -74,7 +72,6 @@
     public void HandleDrop(object droppedDataObject, string targetId, string dropPosition)
     {
         var droppedData = System.Text.Json.JsonSerializer.Deserialize<System.Text.Json.JsonElement>(droppedDataObject.ToString());
-        Console.WriteLine(droppedData);
         string dragType = droppedData.GetProperty("dragType").GetString() ?? "";
 
         if(dragType == "Tool")
@@ -127,68 +124,83 @@
         InsertItem(sourceItem, targetItem, dropPosition);
     }
 
+    // --- MÉTODO CORREGIDO ---
     private void InsertItem(TemplateExecutionModel itemToInsert, TemplateExecutionModel targetItem, string dropPosition)
     {
-        if(dropPosition == "Center")
-        {
-            // Solo se puede soltar en el centro si el destino es una fila (Empty)
-            if(targetItem.Visualization == VisualizationType.Empty)
-            {
-                targetItem.Items.Add(itemToInsert);
-            }
-            else // Si se suelta en el centro de una columna, la reestructura
-            {
-                var parent = targetItem.Parent;
-                if(parent != null)
-                {
-                    var newSubRow = new TemplateExecutionModel { Visualization = VisualizationType.Empty, Name = "Fila anidada" };
-                    // Clonar el item existente para no perder sus hijos si los tuviera
-                    var oldItemClone = new TemplateExecutionModel { Visualization = targetItem.Visualization, Name = targetItem.Name, Items = targetItem.Items };
-                    newSubRow.Items.Add(oldItemClone);
-                    newSubRow.Items.Add(itemToInsert);
-
-                    var index = parent.Items.IndexOf(targetItem);
-                    if(index != -1)
-                        parent.Items[index] = newSubRow;
-                }
-            }
-        }
-        else // Lógica para Top, Bottom, Left, Right
+        // Acción Horizontal: Insertar como columna hermana
+        if(dropPosition == "Left" || dropPosition == "Right")
         {
             var parent = targetItem.Parent;
-            if(parent == null)
-                return;
+            if(parent == null || parent.Visualization != VisualizationType.Empty)
+                return; // Solo se puede insertar en una fila
 
             var index = parent.Items.IndexOf(targetItem);
             if(index == -1)
                 return;
 
-            // Para "Bottom" y "Right", insertamos después del índice actual.
-            if(dropPosition == "Bottom" || dropPosition == "Right")
+            itemToInsert.Position.RowNumber = targetItem.Position.RowNumber;
+
+            int rowNumber = targetItem.Position.ColumnNumber;
+            if(dropPosition == "Right")                      
             {
+                itemToInsert.Position.ColumnNumber = rowNumber + 1;
                 index++;
             }
+            else
+                itemToInsert.Position.ColumnNumber = rowNumber - 1;
 
             parent.Items.Insert(index, itemToInsert);
         }
+        // Acción Vertical: Insertar como una nueva fila
+        else if(dropPosition == "Top" || dropPosition == "Bottom")
+        {
+            // Encontrar el contenedor de la fila de destino (puede ser el canvas principal u otra columna)
+            var containerParent = targetItem.Parent;
+            if(containerParent != null) // La fila está anidada dentro de una columna
+            {
+                var index = containerParent.Items.IndexOf(targetItem);
+                if(index == -1)
+                    return;
+                int rowNumber = containerParent.Items.Max(r => r.Position.RowNumber);
+                if(dropPosition == "Top")
+                    itemToInsert.Position.RowNumber = rowNumber - 1;
+                else
+                    itemToInsert.Position.RowNumber = rowNumber + 1;
+                containerParent.Items.Insert(index, itemToInsert);
+            }
+            else // La fila es una fila raíz en el canvas principal
+            {
+                var index = reportRows.IndexOf(targetItem);
+                if(index == -1)
+                    return;
+
+                int rowNumber = reportRows.Max(r => r.Position.RowNumber);
+                if(dropPosition == "Top")
+                    itemToInsert.Position.RowNumber = rowNumber - 1;
+                else
+                    itemToInsert.Position.RowNumber = rowNumber + 1;
+                if(dropPosition == "Bottom")
+                {
+                    index++;
+                }
+                reportRows.Insert(index, itemToInsert);
+            }
+        }
+        // Acción Central: Anidar o reestructurar
+        else if(dropPosition == "Center")
+        {
+            targetItem.Items.Add(itemToInsert);
+        }
     }
 
-    private void HandleDeleteItem(Guid itemId)
+    private void HandleDeleteItem(TemplateExecutionModel item)
     {
-        var rowToRemove = reportRows.FirstOrDefault(r => r.UniqueId == itemId);
-        if(rowToRemove != null)
+        var itemToDelete = FindItemById(item.UniqueId);
+        if(itemToDelete?.Parent != null)
         {
-            reportRows.Remove(rowToRemove);
-        }
-        else
-        {
-            var itemToDelete = FindItemById(itemId);
-            if(itemToDelete?.Parent != null)
-            {
-                var parent = itemToDelete.Parent;
-                parent.Items.Remove(itemToDelete);
-                CleanupEmptyParent(parent);
-            }
+            var parent = itemToDelete.Parent;
+            parent.Items.Remove(itemToDelete);
+            CleanupEmptyParent(parent);
         }
         StateHasChanged();
     }
@@ -197,7 +209,7 @@
     {
         if(parent != null && parent.Visualization == VisualizationType.Empty && !parent.HasChilds)
         {
-            HandleDeleteItem(parent.UniqueId);
+            HandleDeleteItem(parent);
         }
     }
 
