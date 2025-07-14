@@ -108,6 +108,7 @@ html, body {
     border: 1px solid #ccc;
     border-radius: 8px;
     background-color: #f9f9f9;
+    overflow-y: auto;
 }
 
 .tool-item {
@@ -150,7 +151,6 @@ html, body {
     font-size: 1.2em;
 }
 
-/* Estilos para filas y columnas (base) */
 .report-row, .report-col {
     border-width: 1px;
     border-style: solid;
@@ -184,7 +184,6 @@ html, body {
     flex-grow: 1;
 }
 
-/* Cabecera actualizada con Flexbox para alinear el botón */
 .item-header {
     display: flex;
     justify-content: space-between;
@@ -194,9 +193,9 @@ html, body {
     margin-bottom: 5px;
     border-bottom: 1px solid #eee;
     padding-bottom: 3px;
+    cursor: grab; /* La cabecera es el punto de agarre */
 }
 
-/* Nuevo estilo para el botón de eliminar */
 .delete-btn {
     background: #ff4d4d;
     color: white;
@@ -210,13 +209,12 @@ html, body {
     cursor: pointer;
     padding: 0;
     transition: background-color 0.2s;
-    flex-shrink: 0; /* Evita que el botón se encoja */
+    flex-shrink: 0;
 }
 
     .delete-btn:hover {
         background: #cc0000;
     }
-
 
 .item-content-placeholder {
     display: flex;
@@ -228,8 +226,57 @@ html, body {
     font-size: 0.9em;
 }
 
-.drop-zone.drag-over {
-    background-color: #cfe2ff !important;
-    border-style: solid;
-    box-shadow: inset 0 0 10px rgba(0, 123, 255, 0.5);
+/* ESTILOS PARA EL FEEDBACK VISUAL DE DROP */
+.drop-zone {
+    position: relative;
+    transition: all 0.2s ease-in-out;
 }
+
+    .drop-zone::before {
+        content: '';
+        position: absolute;
+        display: none;
+        background-color: #0d6efd;
+        box-shadow: 0 0 5px #0d6efd;
+        z-index: 10;
+    }
+
+    .drop-zone.drag-over.drop-zone-top::before {
+        display: block;
+        top: 0;
+        left: 0;
+        right: 0;
+        height: 5px;
+    }
+
+    .drop-zone.drag-over.drop-zone-bottom::before {
+        display: block;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        height: 5px;
+    }
+
+    .drop-zone.drag-over.drop-zone-left::before {
+        display: block;
+        top: 0;
+        bottom: 0;
+        left: 0;
+        width: 5px;
+    }
+
+    .drop-zone.drag-over.drop-zone-right::before {
+        display: block;
+        top: 0;
+        bottom: 0;
+        right: 0;
+        width: 5px;
+    }
+
+.report-canvas.drag-over {
+    background-color: #cfe2ff !important;
+}
+
+    .report-canvas.drag-over::before {
+        display: none !important;
+    }

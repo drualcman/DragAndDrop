@@ -8,14 +8,12 @@
 <PageTitle>Blazor Drag & Drop Report Builder</PageTitle>
 
 <div class="report-builder-container">
-    <!-- Paleta de Herramientas (Ahora dinámica) -->
+    <!-- Paleta de Herramientas -->
     <div class="toolbox">
         <h4>Herramientas</h4>
         @foreach(var vizType in Enum.GetValues<VisualizationType>())
         {
-            <div id="tool-@vizType"
-                 class="tool-item"
-                 @ref="toolElements[vizType]"
+            <div id="tool-@vizType" class="tool-item" @ref="toolElements[vizType]"
                  style="background-color: @ColorHelper.GetColorForVisualization(vizType, 0.1); border: 1px solid @ColorHelper.GetColorForVisualization(vizType);">
                 @vizType.ToString()
             </div>
@@ -42,14 +40,11 @@
 @code {
     private List<TemplateExecutionModel> reportRows = new();
     private DotNetObjectReference<Home>? dotNetRef;
-
-    // Diccionario para mantener las referencias a los elementos de la paleta
     private Dictionary<VisualizationType, ElementReference> toolElements = new();
     private ElementReference dropZoneElement;
 
     protected override void OnInitialized()
     {
-        // Inicializar el diccionario para que @ref funcione en el bucle
         foreach(var vizType in Enum.GetValues<VisualizationType>().Where(v => v != VisualizationType.Empty))
         {
             toolElements[vizType] = new ElementReference();
@@ -63,10 +58,10 @@
             dotNetRef = DotNetObjectReference.Create(this);
             await JSRuntime.InvokeVoidAsync("blazorDragDrop.setDotNetHelper", dotNetRef);
 
-            // Hacer que cada herramienta sea arrastrable
             foreach(var (vizType, element) in toolElements)
             {
-                var dragData = new { Type = vizType.ToString() };
+                // El dato que se arrastra es de tipo 'Tool'
+                var dragData = new { DragType = "Tool", Type = vizType.ToString() };
                 await JSRuntime.InvokeVoidAsync("makeDraggable", element, dragData);
             }
 
@@ -76,59 +71,108 @@
     }
 
     [JSInvokable]
-    public void HandleDrop(object droppedData, string targetId)
+    public void HandleDrop(object droppedDataObject, string targetId, string dropPosition)
     {
-        var data = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, string>>(droppedData.ToString());
-        var vizTypeString = data["type"];
-        Enum.TryParse(vizTypeString, out VisualizationType vizType);
+        var droppedData = System.Text.Json.JsonSerializer.Deserialize<System.Text.Json.JsonElement>(droppedDataObject.ToString());
+        Console.WriteLine(droppedData);
+        string dragType = droppedData.GetProperty("dragType").GetString() ?? "";
 
-        if(targetId == "main-canvas")
+        if(dragType == "Tool")
         {
-            var newRow = new TemplateExecutionModel { Visualization = VisualizationType.Empty, Name = "Nueva Fila" };
-            var newCol = new TemplateExecutionModel { Visualization = vizType, Name = vizType.ToString() };
-            newRow.Items.Add(newCol);
-            reportRows.Add(newRow);
+            // Lógica para añadir una nueva herramienta
+            HandleNewToolDrop(droppedData.GetProperty("type").GetString() ?? "", targetId, dropPosition);
         }
-        else
+        else if(dragType == "Item")
         {
-            var targetItem = FindItemById(Guid.Parse(targetId));
-            if(targetItem != null)
-            {
-                if(targetItem.Visualization == VisualizationType.Empty)
-                {
-                    var newCol = new TemplateExecutionModel { Visualization = vizType, Name = vizType.ToString() };
-                    targetItem.Items.Add(newCol);
-                }
-                else
-                {
-                    var parent = targetItem.Parent;
-                    if(parent != null)
-                    {
-                        var newSubRow = new TemplateExecutionModel { Visualization = VisualizationType.Empty, Name = "Fila anidada" };
-                        var oldItemAsNewColumn = new TemplateExecutionModel
-                        {
-                            Visualization = targetItem.Visualization,
-                            Name = targetItem.Name,
-                            Items = targetItem.Items
-                        };
-                        newSubRow.Items.Add(oldItemAsNewColumn);
-
-                        var newItemAsNewColumn = new TemplateExecutionModel { Visualization = vizType, Name = vizType.ToString() };
-                        newSubRow.Items.Add(newItemAsNewColumn);
-
-                        var index = parent.Items.IndexOf(targetItem);
-                        if(index != -1)
-                        {
-                            parent.Items[index] = newSubRow;
-                        }
-                    }
-                }
-            }
+            // Lógica para mover un item existente
+            HandleMoveItemDrop(Guid.Parse(droppedData.GetProperty("itemId").GetString() ?? ""), Guid.Parse(targetId), dropPosition);
         }
         StateHasChanged();
     }
 
-    // Método para manejar la solicitud de eliminación
+    private void HandleNewToolDrop(string vizTypeString, string targetId, string dropPosition)
+    {
+        Enum.TryParse(vizTypeString, out VisualizationType vizType);
+        var newItem = new TemplateExecutionModel { Visualization = vizType, Name = vizType.ToString() };
+
+        if(targetId == "main-canvas")
+        {
+            var newRow = new TemplateExecutionModel { Visualization = VisualizationType.Empty, Name = "Nueva Fila" };
+            newRow.Items.Add(newItem);
+            reportRows.Add(newRow);
+            return;
+        }
+
+        var targetItem = FindItemById(Guid.Parse(targetId));
+        if(targetItem == null)
+            return;
+
+        InsertItem(newItem, targetItem, dropPosition);
+    }
+
+    private void HandleMoveItemDrop(Guid sourceId, Guid targetId, string dropPosition)
+    {
+        var sourceItem = FindItemById(sourceId);
+        var targetItem = FindItemById(targetId);
+
+        if(sourceItem == null || targetItem == null || sourceId == targetId || IsDescendant(sourceItem, targetId))
+            return;
+
+        // 1. Eliminar el item de su posición original
+        var parent = sourceItem.Parent;
+        parent?.Items.Remove(sourceItem);
+        CleanupEmptyParent(parent);
+
+        // 2. Insertar el item en la nueva posición
+        InsertItem(sourceItem, targetItem, dropPosition);
+    }
+
+    private void InsertItem(TemplateExecutionModel itemToInsert, TemplateExecutionModel targetItem, string dropPosition)
+    {
+        if(dropPosition == "Center")
+        {
+            // Solo se puede soltar en el centro si el destino es una fila (Empty)
+            if(targetItem.Visualization == VisualizationType.Empty)
+            {
+                targetItem.Items.Add(itemToInsert);
+            }
+            else // Si se suelta en el centro de una columna, la reestructura
+            {
+                var parent = targetItem.Parent;
+                if(parent != null)
+                {
+                    var newSubRow = new TemplateExecutionModel { Visualization = VisualizationType.Empty, Name = "Fila anidada" };
+                    // Clonar el item existente para no perder sus hijos si los tuviera
+                    var oldItemClone = new TemplateExecutionModel { Visualization = targetItem.Visualization, Name = targetItem.Name, Items = targetItem.Items };
+                    newSubRow.Items.Add(oldItemClone);
+                    newSubRow.Items.Add(itemToInsert);
+
+                    var index = parent.Items.IndexOf(targetItem);
+                    if(index != -1)
+                        parent.Items[index] = newSubRow;
+                }
+            }
+        }
+        else // Lógica para Top, Bottom, Left, Right
+        {
+            var parent = targetItem.Parent;
+            if(parent == null)
+                return;
+
+            var index = parent.Items.IndexOf(targetItem);
+            if(index == -1)
+                return;
+
+            // Para "Bottom" y "Right", insertamos después del índice actual.
+            if(dropPosition == "Bottom" || dropPosition == "Right")
+            {
+                index++;
+            }
+
+            parent.Items.Insert(index, itemToInsert);
+        }
+    }
+
     private void HandleDeleteItem(Guid itemId)
     {
         var rowToRemove = reportRows.FirstOrDefault(r => r.UniqueId == itemId);
@@ -141,15 +185,20 @@
             var itemToDelete = FindItemById(itemId);
             if(itemToDelete?.Parent != null)
             {
-                itemToDelete.Parent.Items.Remove(itemToDelete);
-                // Si el padre es una fila y se queda sin hijos, lo eliminamos también.
-                if(itemToDelete.Parent.Visualization == VisualizationType.Empty && !itemToDelete.Parent.HasChilds)
-                {
-                    HandleDeleteItem(itemToDelete.Parent.UniqueId);
-                }
+                var parent = itemToDelete.Parent;
+                parent.Items.Remove(itemToDelete);
+                CleanupEmptyParent(parent);
             }
         }
         StateHasChanged();
+    }
+
+    private void CleanupEmptyParent(TemplateExecutionModel? parent)
+    {
+        if(parent != null && parent.Visualization == VisualizationType.Empty && !parent.HasChilds)
+        {
+            HandleDeleteItem(parent.UniqueId);
+        }
     }
 
     private TemplateExecutionModel? FindItemById(Guid id)
@@ -174,6 +223,11 @@
                 return found;
         }
         return null;
+    }
+
+    private bool IsDescendant(TemplateExecutionModel node, Guid idToFind)
+    {
+        return node.Items.Any(child => child.UniqueId == idToFind || IsDescendant(child, idToFind));
     }
 
     private void ClearReport()

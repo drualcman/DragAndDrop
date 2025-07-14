@@ -12,7 +12,6 @@
         {
             @foreach(var child in Item.Items)
             {
-                // Propagar el evento de eliminación hacia los hijos
                 <ReportItemView Item="child" OnDeleteItemRequest="OnDeleteItemRequest" />
             }
         }
@@ -39,22 +38,19 @@
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
+        // Ahora cada item es tanto una zona de drop como un elemento arrastrable
         if(firstRender)
         {
             await JSRuntime.InvokeVoidAsync("makeDropZone", elementRef);
+
+            // El dato que se arrastra es de tipo 'Item'
+            var dragData = new { DragType = "Item", ItemId = Item.UniqueId.ToString() };
+            await JSRuntime.InvokeVoidAsync("makeDraggable", elementRef, dragData);
         }
     }
 
-    private string GetContainerClass(TemplateExecutionModel item)
-    {
-        return item.Visualization == VisualizationType.Empty ? "report-row" : "report-col";
-    }
-
-    private string GetContentClass(TemplateExecutionModel item)
-    {
-        return item.Visualization == VisualizationType.Empty ? "row-content" : "col-content";
-    }
-
+    private string GetContainerClass(TemplateExecutionModel item) => item.Visualization == VisualizationType.Empty ? "report-row" : "report-col";
+    private string GetContentClass(TemplateExecutionModel item) => item.Visualization == VisualizationType.Empty ? "row-content" : "col-content";
     private string GetItemStyle()
     {
         var color = ColorHelper.GetColorForVisualization(Item.Visualization);
